@@ -6,11 +6,60 @@ import (
 	"gocv.io/x/gocv"
 	"image"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+// SSIM calculates the Structural Similarity Index between two images
+func SSIM(img1, img2 gocv.Mat) float64 {
+	width := img1.Cols()
+	height := img1.Rows()
+
+	// Constants for SSIM calculation
+	C1 := 6.5025
+	C2 := 58.5225
+	var sumL, sumC, sumS float64
+
+	// Convert to grayscale images (to work with pixel values)
+	img1Gray := gocv.NewMat()
+	defer img1Gray.Close()
+	img2Gray := gocv.NewMat()
+	defer img2Gray.Close()
+
+	gocv.CvtColor(img1, &img1Gray, gocv.ColorBGRToGray)
+	gocv.CvtColor(img2, &img2Gray, gocv.ColorBGRToGray)
+
+	// Calculate SSIM using pixel-wise comparison
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			I1 := float64(img1Gray.GetUCharAt(y, x))
+			I2 := float64(img2Gray.GetUCharAt(y, x))
+
+			// Luminance (mean of I1 and I2)
+			luminance := I1 * I2
+			// Contrast (standard deviation)
+			contrast := math.Pow(I1, 2) + math.Pow(I2, 2)
+			// Structure
+			structure := I1 * I2
+
+			// Sum values for SSIM calculation
+			sumL += luminance
+			sumC += contrast
+			sumS += structure
+		}
+	}
+
+	// SSIM formula
+	L := (2*sumL + C1) / (sumC + C1)
+	C := (2*sumC + C2) / (sumS + C2)
+
+	// Return SSIM index
+	ssimIndex := L * C
+	return ssimIndex
+}
 
 // ExtractTextWithEnglishAndNumbers performs OCR on the image and extracts specific text
 func ExtractTextWithEnglishAndNumbers(imagePath string) (string, error) {
@@ -67,17 +116,13 @@ func CompareImages(image1Path, image2Path string) (float64, error) {
 	gocv.Resize(img2, &img2Resized, size, 0, 0, gocv.InterpolationLinear)
 
 	// Compute SSIM
-	ssimValue, err := gocv.SSIM(img1Resized.ToImage(), img2Resized.ToImage())
-	if err != nil {
-		return 0, err
-	}
+	ssimValue := SSIM(img1Resized, img2Resized)
 	return ssimValue, nil
 }
 
 // AnalyzeDirectory monitors a directory for new images and processes them
 func AnalyzeDirectory(directory, referenceImagePath string) {
 	processedFiles := make(map[string]bool)
-
 	// Check if reference image exists
 	_, err := ValidateImage(referenceImagePath)
 	if err != nil {
